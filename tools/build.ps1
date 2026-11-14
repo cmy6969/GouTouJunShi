@@ -82,6 +82,20 @@ $d8 = Join-Path $BuildTools 'lib\d8.jar'
 # The d8 shipped with build-tools 34 (R8 8.2) crashes on some anonymous classes produced by
 # javac 21 ("NullPointerException in DexString").  A newer R8 jar is used when available.
 $bundledD8 = Join-Path $PSScriptRoot 'lib\r8.jar'
+# The d8 shipped with build-tools is too old for javac 21 classes, so R8 is preferred.
+# It is not committed (17 MB); fetch it once on demand.
+if (-not (Test-Path $bundledD8)) {
+    $r8Url = 'https://maven.google.com/com/android/tools/r8/8.11.18/r8-8.11.18.jar'
+    Write-Host '[ .. ] fetching r8 8.11.18'
+    try {
+        New-Item -ItemType Directory -Force -Path (Split-Path $bundledD8) | Out-Null
+        Invoke-WebRequest -Uri $r8Url -OutFile $bundledD8 -UseBasicParsing -TimeoutSec 300
+        Write-Host '[ OK ] r8 downloaded'
+    } catch {
+        Write-Host ('[WARN] could not download r8: ' + $_.Exception.Message)
+    }
+}
+
 if (Test-Path $bundledD8) {
     $d8 = $bundledD8
 } elseif ($env:R8_JAR -and (Test-Path $env:R8_JAR)) {
