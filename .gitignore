@@ -1,0 +1,14 @@
+# build output
+build/
+dist/
+*.apk
+*.idsig
+*.keystore
+
+# test scratch
+.testdeps/
+node_modules/
+
+# local notes
+work/
+docs/

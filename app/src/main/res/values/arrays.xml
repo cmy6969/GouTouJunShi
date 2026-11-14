@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Only the host package is in scope. -->
+    <string-array name="xposed_scope">
+        <item>com.chaoxing.mobile</item>
+    </string-array>
+</resources>
