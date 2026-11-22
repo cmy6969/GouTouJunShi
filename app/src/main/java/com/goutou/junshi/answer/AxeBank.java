@@ -146,6 +146,11 @@ public final class AxeBank {
             }
             String wire = toWire(raw, q);
             if (wire.isEmpty()) {
+                String preview = raw.replace('\n', ' ');
+                if (preview.length() > 200) {
+                    preview = preview.substring(0, 200) + "…";
+                }
+                Logx.i("axe: raw answer for " + q.id + " = " + preview);
                 return new Hit("", lefts, "AXE 答案无法匹配到选项");
             }
             return new Hit(wire, lefts, msg);

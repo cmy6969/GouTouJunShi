@@ -108,6 +108,12 @@ public final class AiBank {
         }
         String wire = toWire(content, q);
         if (wire.isEmpty()) {
+            // Keep the raw reply in the log: "cannot use the answer" without the text is unhelpful.
+            String preview = content.replace('\n', ' ');
+            if (preview.length() > 160) {
+                preview = preview.substring(0, 160) + "…";
+            }
+            Logx.i("ai: unusable reply for " + q.id + " = " + preview);
             return new Hit("", "AI 未能给出可用答案");
         }
         Logx.i("ai: answer for " + q.id + " = " + wire);

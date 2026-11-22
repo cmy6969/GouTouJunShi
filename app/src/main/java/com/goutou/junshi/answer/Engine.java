@@ -59,6 +59,36 @@ public final class Engine {
         return raw == null ? null : WebRef.of(raw);
     }
 
+    /**
+     * Dumps the current question block to the log (chunked, so logcat does not cut it).
+     *
+     * <p>Reachable without any config by tapping the floating button three times quickly: that is how
+     * a page whose DOM differs from the known ones gets diagnosed on a real device.</p>
+     */
+    public static void dumpCurrentPage() {
+        WebRef web = currentWebView();
+        if (web == null) {
+            Logx.i("dom: no web view on this page");
+            return;
+        }
+        Logx.i("dom: ---- page structure ----");
+        web.eval(Js.DUMP, new WebRef.JsResult() {
+            @Override
+            public void onValue(String value) {
+                String text = value == null ? "" : value;
+                if (text.length() > 1 && text.startsWith("\"") && text.endsWith("\"")) {
+                    text = text.substring(1, text.length() - 1);
+                }
+                int step = 900;
+                for (int i = 0; i < text.length(); i += step) {
+                    int end = Math.min(text.length(), i + step);
+                    Logx.i("dom[" + (i / step + 1) + "] " + text.substring(i, end));
+                }
+                Logx.i("dom: ---- end (" + text.length() + " chars) ----");
+            }
+        });
+    }
+
     static boolean autoFill() {
         return autoFillOverride || Cfg.get().autoFill;
     }

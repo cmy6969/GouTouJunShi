@@ -35,12 +35,20 @@
         '.singleChoice', '.mulChoice', '.trueOrFalse', '.judgeoption',
         '.child-singleChoice', '.child-mulChoice', 'li[choice_name]',
         '.optionItem', '.option_li', '.radio_option', '.checkbox_option',
-        '.radioItemCont', '.checkItemCont', '.option-item', '.optionUl li', '.answerBg li'
+        '.radioItemCont', '.checkItemCont', '.option-item', '.optionUl li', '.answerBg li',
+        // Phone homework / exam pages: <span class="choose" orichoice="A">A</span> inside .Answer
+        '.choose[orichoice]', '.choose',
+        // …and the multi-select variant: <span class="dxcheck" orichoice="C">C</span>
+        '.dxcheck[orichoice]', '.dxcheck',
+        // …and true/false questions: <span class="check" data="true">A</span>
+        '.check[data]', '.Answer .check'
     ].join(',');
 
     var STEM_SEL = [
         '.Zy_TItle', '.tit', '.mark_name', '.mark_name_one', '.stem', '.q-title',
-        'h3.tit', '.Cy_TItle', '.question-title', '.que-title'
+        'h3.tit', '.Cy_TItle', '.question-title', '.que-title',
+        // phone homework page: the stem sits in .timuStyle, the type label is a sibling h2
+        '.timuStyle'
     ].join(',');
 
     function txt(el) {
@@ -158,8 +166,26 @@
     }
 
     function keyOf(n) {
-        var k = attr(n, 'name') || attr(n, 'choice_name') || attr(n, 'orichoice') || attr(n, 'data');
-        if (k) return k.replace(/[^A-Za-z]{1,}$/, '').replace(/^[^A-Za-z]+/, '');
+        // `orichoice` first: the phone homework page uses data="answer<qid>" on every option, which
+        // is not a key at all.
+        var k = attr(n, 'orichoice') || attr(n, 'choice_name') || attr(n, 'name');
+        if (!k) {
+            var d = attr(n, 'data');
+            if (d && !/^answer\d+$/i.test(d)) {
+                k = d;
+            }
+        }
+        if (k) {
+            // True/false options carry the value in data="true|false"; the pipeline speaks A/B.
+            var low = String(k).toLowerCase();
+            if (low === 'true' || low === '对' || low === '正确') {
+                return 'A';
+            }
+            if (low === 'false' || low === '错' || low === '错误') {
+                return 'B';
+            }
+            return k.replace(/[^A-Za-z]{1,}$/, '').replace(/^[^A-Za-z]+/, '');
+        }
         var inner = n.querySelector && n.querySelector('input[type="hidden"],.No,.num,.check,.option-key');
         if (inner) {
             var v = attr(inner, 'choice_name') || valueOf(inner);
@@ -176,6 +202,18 @@
     function optionText(n) {
         var info = n.querySelector && n.querySelector('.answerInfo,.info,.aBox,.ansBox,.option-text,.text');
         var s = txt(info || n);
+        // The phone homework page keeps only the letter in the option element and the text in the
+        // next sibling (or in an element whose id is that letter).
+        if (s.replace(/[^A-Za-z]/g, '').length >= s.replace(/\s+/g, '').length - 1 && s.length <= 3) {
+            var key = keyOf(n);
+            var sib = n.nextElementSibling;
+            var sibText = sib ? txt(sib) : '';
+            if (sibText) {
+                s = sibText;
+            } else if (key && document.getElementById(key)) {
+                s = txt(document.getElementById(key));
+            }
+        }
         return s.replace(/^\s*[A-Za-z]\s*[\.、．:：\)）]\s*/, '').replace(/\s+/g, ' ').trim();
     }
 
@@ -771,9 +809,23 @@
         return null;
     }
 
+    /** The hidden answer field of a question: some pages give it an id, others only a name. */
+    function answerField(qid) {
+        return document.getElementById('answers' + qid)
+            || document.getElementById('answer' + qid)
+            || document.querySelector('input[name="answer' + qid + '"]')
+            || document.querySelector('input[name="answers' + qid + '"]');
+    }
+
     function readChoiceState(el, qid) {
-        var hidden = document.getElementById('answers' + qid) || document.getElementById('answer' + qid);
-        if (hidden && hidden.value) return String(hidden.value);
+        var hidden = answerField(qid);
+        if (hidden && hidden.value) {
+            var raw = String(hidden.value).trim();
+            // True/false pages store the option value, not the letter.
+            if (/^true$/i.test(raw)) return 'A';
+            if (/^false$/i.test(raw)) return 'B';
+            return raw;
+        }
         var picked = '';
         var checked = nodes(el, '.dxchecked,.checked,.on,.cur,.selected,input:checked');
         if (checked.length > 0) {
@@ -792,28 +844,58 @@
     function setChoiceClass(node, on) {
         try {
             if (!node.classList) return;
+            // `checked` is the class the phone single-choice page uses, `dxchecked` the multi-select
+            // one; `on` covers the desktop pages.
             if (on) {
                 node.classList.add('on');
+                node.classList.add('checked');
+                node.classList.add('dxchecked');
             } else {
                 node.classList.remove('on');
+                node.classList.remove('checked');
+                node.classList.remove('dxchecked');
             }
         } catch (e) { /* ignore */ }
     }
 
+    /**
+     * The value the page itself stores for an option.
+     *
+     * <p>Choice pages key options by {@code orichoice} ("A"), true/false pages by
+     * {@code data="true|false"}.  Saving "B" for a true/false option makes the page think the
+     * question was answered (the card lights up) while rendering nothing on reload, because the
+     * stored value matches no option.</p>
+     */
+    function wireKeyOf(n) {
+        var d = attr(n, 'data');
+        if (d && !/^answer\d+$/i.test(d)) return d;
+        var o = attr(n, 'orichoice');
+        if (o) return o;
+        var c = attr(n, 'choice_name');
+        if (c) return c;
+        return keyOf(n);
+    }
+
     /** Writes the answer into the page state (hidden field + visual class) without clicking. */
     function forceChoice(el, qid, letters) {
-        var hidden = document.getElementById('answers' + qid) || document.getElementById('answer' + qid);
+        var list = nodes(el, OPT_SEL);
+        var keys = [];
+        for (var i = 0; i < list.length; i++) {
+            var k = keyOf(list[i]);
+            var on = !!k && letters.indexOf(String(k).toUpperCase()) >= 0;
+            setChoiceClass(list[i], on);
+            if (on) {
+                keys.push(wireKeyOf(list[i]));
+            }
+        }
+        var value = keys.length > 0 ? keys.join('') : letters;
+        var hidden = answerField(qid);
         if (hidden) {
-            setValue(hidden, letters);
+            setValue(hidden, value);
         }
         var inQ = el.querySelector('input[name="answers' + qid + '"],input[name="answer' + qid + '"]');
         if (inQ && inQ !== hidden) {
-            setValue(inQ, letters);
-        }
-        var list = nodes(el, OPT_SEL);
-        for (var i = 0; i < list.length; i++) {
-            var k = keyOf(list[i]);
-            setChoiceClass(list[i], !!k && letters.indexOf(String(k).toUpperCase()) >= 0);
+            setValue(inQ, value);
         }
         syncPage(el, qid);
     }
@@ -836,17 +918,28 @@
     function applyChoice(el, qid, answer) {
         var letters = String(answer || '').replace(/[^A-Za-z]/g, '').toUpperCase();
         if (!letters) return false;
-        // The page only trusts real touch input, so a synthetic click is at best a hint; the state
-        // is then written directly below.
+        // The page only trusts real input, so a synthetic click is at best a hint; the state is
+        // then written directly below.
+        var clicked = 0;
         for (var i = 0; i < letters.length; i++) {
             var node = optionByKey(el, letters.charAt(i));
-            if (node) mouse(node);
+            if (!node) continue;
+            // Phone homework pages bind the handler to the whole option row (.Answer); clicking the
+            // letter bubbles up, but clicking the row is closer to a real tap.
+            var row = null;
+            try {
+                row = node.closest ? node.closest('.Answer') : null;
+            } catch (e1) {
+                row = null;
+            }
+            if (mouse(row || node)) clicked++;
         }
-        var observed = readChoiceState(el, qid);
-        if (observed.toUpperCase() !== letters) {
+        var observed = readChoiceState(el, qid).toUpperCase();
+        if (observed !== letters) {
             forceChoice(el, qid, letters);
+            observed = readChoiceState(el, qid).toUpperCase();
         }
-        return true;
+        return clicked > 0 || observed === letters;
     }
 
     /**
@@ -955,20 +1048,28 @@
     /** Text currently inside the essay editor (used by verify). */
     function readEditorText(el) {
         try {
-            var host = el.querySelector && el.querySelector('.editorItem');
+            // The editor container differs per page (.editorItem on self-tests, a bare UEditor on
+            // homework papers), so look for any editable surface inside the question.
+            var host = el.querySelector && el.querySelector('.editorItem')
+                || el.querySelector && el.querySelector('.edui-editor, iframe[id^="ueditor_"],'
+                    + '[contenteditable="true"], textarea, .edui-body');
             if (!host) return '';
             var ed = ueditorOf(host);
+            if (!ed) {
+                ed = ueditorOf(el);
+            }
             if (ed && typeof ed.getContent === 'function') {
                 return String(ed.getContent() || '').replace(/<[^>]+>/g, '').trim();
             }
-            var ifr = host.querySelector && host.querySelector('iframe');
+            var ifr = host.tagName === 'IFRAME' ? host : (host.querySelector && host.querySelector('iframe'));
             if (ifr) {
                 var doc = null;
                 try { doc = ifr.contentDocument; } catch (e) { doc = null; }
                 if (doc && doc.body) return String(doc.body.textContent || '').trim();
             }
-            var ta = host.querySelector && host.querySelector('textarea');
-            return ta ? String(ta.value || '').trim() : '';
+            var ta = host.tagName === 'TEXTAREA' ? host : (host.querySelector && host.querySelector('textarea'));
+            if (ta) return String(ta.value || '').trim();
+            return String(host.textContent || '').trim();
         } catch (e) {
             return '';
         }

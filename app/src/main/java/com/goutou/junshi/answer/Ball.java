@@ -135,8 +135,22 @@ public final class Ball {
     private static void bindTouch(final Activity activity, final TextView button,
                                   final FrameLayout.LayoutParams lp) {
         button.setOnClickListener(new View.OnClickListener() {
+            private long lastTap;
+            private int taps;
+
             @Override
             public void onClick(View v) {
+                // Three quick taps dump the page structure instead of answering; useful when a new
+                // page uses a different DOM and nothing gets selected.
+                long now = System.currentTimeMillis();
+                taps = now - lastTap < 700 ? taps + 1 : 1;
+                lastTap = now;
+                if (taps >= 3) {
+                    taps = 0;
+                    pulse(v);
+                    Engine.dumpCurrentPage();
+                    return;
+                }
                 pulse(v);
                 Action a = action;
                 if (a != null) {
